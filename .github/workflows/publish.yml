@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ steps.app-token.outputs.token }}
-          # NOTE: we can't set persist-credentials to false or else ghp-import will fail later
+          persist-credentials: false
 
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v6
@@ -34,6 +34,8 @@ jobs:
         run: uv run generate_stats.py
 
       - name: Publish to gh-pages
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           uv tool run ghp-import@2.1.0 \
           --no-jekyll \
