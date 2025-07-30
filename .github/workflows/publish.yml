@@ -1,0 +1,25 @@
+name: Generate and Publish Stats
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  generate-and-publish-stats:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Generate stats
+        run: uv run generate_stats.py
+
+      - name: Publish to gh-pages
+        run: uv tool run ghp-import -c stats.dangerzone.rocks --no-history --push output
