@@ -1,0 +1,367 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #f5f8fa;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.header h1 {
+    color: #24292e;
+    margin-bottom: 0.5rem;
+}
+
+.tabs {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 2rem;
+}
+
+.tabs button {
+    background: none;
+    border: none;
+    padding: 0.5rem 1rem;
+    margin: 0 0.5rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+}
+
+.tabs button.active {
+    border-bottom-color: #0366d6;
+    color: #0366d6;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card h2 {
+    margin-top: 0;
+    color: #24292e;
+}
+
+.stat-card ul {
+    list-style: none;
+    padding: 0;
+}
+
+.stat-card li {
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.stat-card a {
+    color: #0366d6;
+    text-decoration: none;
+}
+
+.stat-card a:hover {
+    text-decoration: underline;
+}
+
+.state {
+    padding: 2px 6px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+}
+
+.state.open {
+    background: #28a745;
+    color: white;
+}
+
+.state.closed {
+    background: #d73a49;
+    color: white;
+}
+
+.charts {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+}
+
+.chart {
+    margin-bottom: 2rem;
+}
+
+.chart h3 {
+    margin-top: 0;
+    color: #24292e;
+}
+
+.chart-container {
+    display: flex;
+    align-items: flex-end;
+    height: 250px;
+    padding: 1rem;
+    gap: 1rem;
+    min-width: 100%;
+    overflow-x: auto;
+}
+
+.chart-container.stacked {
+    position: relative;
+    margin-top: 2rem;
+    gap: 0.5rem;
+}
+
+.chart-legend {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin: 0;
+    padding: 1rem;
+    background: white;
+    border-radius: 6px;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+}
+
+.bar-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+}
+
+.bar-group.stacked {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    min-width: 45px;
+}
+
+.stacked-bars {
+    display: flex;
+    flex-direction: column-reverse;
+    width: 35px;
+}
+
+.bar {
+    width: 30px;
+    background: #0366d6;
+    transition: height 0.3s ease;
+}
+
+.bar.stacked-bar {
+    width: 100%;
+    transition: height 0.3s ease;
+}
+
+.bar.stacked-bar:hover {
+    opacity: 0.8;
+}
+
+.bar-label {
+    margin-top: 1rem;
+    font-size: 0.75rem;
+    text-align: center;
+    transform: rotate(-45deg);
+    transform-origin: top center;
+    white-space: nowrap;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.pr-bar {
+    background: #0366d6;
+}
+
+.issue-bar {
+    background: #28a745;
+}
+
+.release-date {
+    color: #666;
+    font-size: 0.9rem;
+    margin: 0.5rem 0;
+}
+
+.assets-list {
+    margin-top: 1rem;
+}
+
+.asset-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #eee;
+}
+
+.asset-item:last-child {
+    border-bottom: none;
+}
+
+.asset-name {
+    color: #0366d6;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.asset-name:hover {
+    text-decoration: underline;
+}
+
+.download-count {
+    font-size: 0.8rem;
+    color: #666;
+    background: #f1f8ff;
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+
+.download-bar {
+    background: #28a745;
+}
+
+.download-total {
+    display: block;
+    font-size: 0.7rem;
+    color: #666;
+    margin-top: 2px;
+}
+
+.version-label {
+    font-weight: 500;
+}
+
+.date-label {
+    font-size: 0.7rem;
+    color: #666;
+}
+
+.chart.horizontal {
+    margin: 2rem 0;
+    min-height: 500px;
+}
+
+.chart-container.horizontal {
+    flex-direction: column;
+    align-items: stretch;
+    height: auto;
+    min-height: 400px;
+    padding: calc(1rem + 70px) 2rem 1rem 12rem;
+    gap: 1.5rem;
+    overflow-y: auto;
+    position: relative;
+}
+
+.bar-group.horizontal {
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    height: 30px;
+    position: relative;
+    margin: 0.5rem 0;
+    display: flex;
+    border-bottom: 1px solid #eee;
+}
+
+.bar-group.horizontal:last-child {
+    border-bottom: none;
+}
+
+.bar-label.horizontal {
+    position: absolute;
+    left: -11rem;
+    width: 10rem;
+    transform: none;
+    margin: 0;
+    text-align: right;
+    padding-right: 1rem;
+    z-index: 1;
+}
+
+.stacked-bars.horizontal {
+    display: flex;
+    flex-direction: row;
+    width: 400px;
+    height: 30px;
+    position: relative;
+    background: transparent;
+}
+
+.bar.stacked-bar.horizontal {
+    height: 30px;
+    display: inline-block;
+    transition: width 0.3s ease;
+}
+
+.bar.stacked-bar.horizontal+.bar.stacked-bar.horizontal {
+    margin-left: 0;
+}
+
+.download-total.horizontal {
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    font-size: 0.8rem;
+    color: #666;
+    padding-left: 1rem;
+}
+
+.version-label {
+    display: block;
+    font-weight: 500;
+    font-size: 0.85rem;
+    color: #24292e;
+}
+
+.date-label {
+    display: block;
+    font-size: 0.75rem;
+    color: #666;
+}
+
+.total-downloads {
+    margin-left: 1rem;
+    font-size: 0.9rem;
+    color: #94a2b0;
+    white-space: nowrap;
+    min-width: 100px;
+    padding-left: 1rem;
+}
