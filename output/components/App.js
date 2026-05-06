@@ -4,6 +4,7 @@ import { Stats } from './Stats.js';
 import { Chart } from './Chart.js';
 import { YearlyChart } from './YearlyChart.js';
 import { ContributionChart } from './ContributionChart.js';
+import { ContainerChart } from './ContainerChart.js';
 
 export function App({ stats, generatedAt }) {
     const [activeTab, setActiveTab] = useState('charts');
@@ -23,6 +24,10 @@ export function App({ stats, generatedAt }) {
                 onClick: () => setActiveTab('yearly')
             }, 'By Year'),
             h('button', {
+                class: activeTab === 'containers' ? 'active' : '',
+                onClick: () => setActiveTab('containers')
+            }, 'Container Images'),
+            h('button', {
                 class: activeTab === 'overview' ? 'active' : '',
                 onClick: () => setActiveTab('overview')
             }, 'Overview'),
@@ -33,7 +38,8 @@ export function App({ stats, generatedAt }) {
         ]),
         activeTab === 'charts' ? h(Chart, { stats }) :
             activeTab === 'yearly' ? h(YearlyChart, { stats }) :
-                activeTab === 'contributions' ? h(ContributionChart, { stats }) :
-                    h(Stats, { stats })
+                activeTab === 'containers' ? h(ContainerChart, { stats }) :
+                    activeTab === 'contributions' ? h(ContributionChart, { stats }) :
+                        h(Stats, { stats })
     ]);
 } 

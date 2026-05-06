@@ -8,6 +8,7 @@
 # ///
 import asyncio
 import os
+import re
 import json
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -448,6 +449,195 @@ async def fetch_contributions(repo: str, token: str = None) -> Dict:
         }
     }
 
+async def fetch_container_downloads(token: str = None) -> Dict:
+    """Fetch container image info from ghcr-signer and GHCR.
+
+    Uses the Git Trees API (1 call) to read the full ghcr-signer directory
+    structure, then resolves architecture info via anonymous GHCR OCI
+    manifest requests (which don't count against GitHub API rate limits).
+    """
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        if token.startswith("ghp_"):
+            headers["Authorization"] = f"token {token}"
+        elif token.startswith("github_pat_"):
+            headers["Authorization"] = f"Bearer {token}"
+        else:
+            headers["Authorization"] = f"token {token}"
+
+    signer_repo = "freedomofpress/ghcr-signer"
+
+    async with httpx.AsyncClient(headers=headers, timeout=60.0, follow_redirects=True) as client:
+        # Step 1: Get the full repo tree in a single API call
+        resp = await client.get(
+            f"https://api.github.com/repos/{signer_repo}/git/trees/main",
+            params={"recursive": "1"}
+        )
+        resp.raise_for_status()
+        tree = resp.json().get("tree", [])
+
+        # Parse the tree to find arch-specific digests (those WITHOUT a LATEST file).
+        # Tree entries look like: SIGNATURES/<timestamp>/<digest>/<file>
+        # Digests with LATEST are multi-arch indexes; without are arch-specific.
+        batches_map = {}  # timestamp -> {digest -> set of files}
+        for entry in tree:
+            path = entry.get("path", "")
+            if not path.startswith("SIGNATURES/"):
+                continue
+            parts = path.split("/")
+            if len(parts) == 4:
+                timestamp, digest, filename = parts[1], parts[2], parts[3]
+                if len(digest) == 64 and all(c in '0123456789abcdef' for c in digest):
+                    if timestamp not in batches_map:
+                        batches_map[timestamp] = {}
+                    if digest not in batches_map[timestamp]:
+                        batches_map[timestamp][digest] = set()
+                    batches_map[timestamp][digest].add(filename)
+
+        # Build batches with only arch-specific digests (no LATEST file)
+        batches = []
+        for ts in sorted(batches_map.keys()):
+            arch_digests = sorted([
+                d for d, files in batches_map[ts].items()
+                if "LATEST" not in files
+            ])
+            if arch_digests:
+                batches.append({"timestamp": ts, "digests": arch_digests})
+
+        # Step 2: Get an anonymous GHCR token (doesn't use GitHub API quota)
+        ghcr_token = ""
+        try:
+            token_resp = await client.get(
+                "https://ghcr.io/token?scope=repository:freedomofpress/dangerzone/v1:pull"
+            )
+            ghcr_token = token_resp.json().get("token", "")
+        except Exception as e:
+            print(f"Warning: Could not get GHCR token: {e}")
+
+        # Step 3: For each arch-specific digest, resolve its architecture
+        # via GHCR manifest + config blob (requests to ghcr.io, no API rate limit).
+        # Run all lookups in parallel.
+        all_digests = set()
+        for batch in batches:
+            for digest in batch["digests"]:
+                all_digests.add(digest)
+
+        async def resolve_arch(digest):
+            """Fetch manifest then config blob to determine architecture."""
+            try:
+                manifest_resp = await client.get(
+                    f"https://ghcr.io/v2/freedomofpress/dangerzone/v1/manifests/sha256:{digest}",
+                    headers={
+                        "Authorization": f"Bearer {ghcr_token}",
+                        "Accept": ", ".join([
+                            "application/vnd.oci.image.manifest.v1+json",
+                            "application/vnd.docker.distribution.manifest.v2+json",
+                        ])
+                    }
+                )
+                if manifest_resp.status_code == 200:
+                    manifest = manifest_resp.json()
+                    config_digest = manifest.get("config", {}).get("digest", "")
+                    if config_digest:
+                        config_resp = await client.get(
+                            f"https://ghcr.io/v2/freedomofpress/dangerzone/v1/blobs/{config_digest}",
+                            headers={"Authorization": f"Bearer {ghcr_token}"}
+                        )
+                        if config_resp.status_code == 200:
+                            return config_resp.json().get("architecture", "unknown")
+            except Exception as e:
+                print(f"Warning: Could not fetch manifest for {digest[:12]}: {e}")
+            return "unknown"
+
+        arch_by_digest = {}
+        if ghcr_token:
+            sorted_digests = sorted(all_digests)
+            results = await asyncio.gather(*[resolve_arch(d) for d in sorted_digests])
+            arch_by_digest = dict(zip(sorted_digests, results))
+
+        result_batches = []
+        for batch in batches:
+            batch_info = {
+                "timestamp": batch["timestamp"],
+                "images": [
+                    {"digest": d, "arch": arch_by_digest.get(d, "unknown")}
+                    for d in batch["digests"]
+                ]
+            }
+            result_batches.append(batch_info)
+
+        # Step 4: Scrape download counts from the GitHub package versions web pages.
+        # The REST API does not expose download_count for container packages,
+        # so we scrape the HTML instead (no API rate limit).
+        download_counts = {}  # digest -> {"downloads": N, "url": str}
+        pkg_url = "https://github.com/freedomofpress/dangerzone/pkgs/container/dangerzone%2Fv1/versions"
+
+        page = 1
+        max_pages = 40
+        found_all = False
+        while page <= max_pages and not found_all:
+            try:
+                resp = await client.get(
+                    pkg_url,
+                    params={"page": page},
+                    headers={"Accept": "text/html"},
+                    follow_redirects=True,
+                )
+                if resp.status_code != 200:
+                    print(f"Warning: Package page returned {resp.status_code}")
+                    break
+                html = resp.text
+
+                # Extract version URL, digest, and download count.
+                # Real image entries have "sha256:" (colon) in the link text
+                # and no ?tag= in the href, unlike .sig/.att tag entries.
+                # The download count follows as bare text before a sr-only span.
+                for m in re.finditer(
+                    r'href="(/orgs/freedomofpress/packages/container/dangerzone%2Fv1/\d+)">'
+                    r'sha256:([0-9a-f]{64})</a>'
+                    r'.*?'
+                    r'>\s*(\d+)\s*<span[^>]*>Version downloads</span>',
+                    html,
+                    re.DOTALL,
+                ):
+                    url_path = m.group(1)
+                    digest = m.group(2)
+                    count = int(m.group(3))
+                    download_counts[digest] = {
+                        "downloads": count,
+                        "url": f"https://github.com{url_path}",
+                    }
+
+                if all_digests.issubset(download_counts.keys()):
+                    found_all = True
+
+                if 'Version downloads' not in html:
+                    break
+
+                page += 1
+            except Exception as e:
+                print(f"Warning: Failed to scrape package page {page}: {e}")
+                break
+
+        if download_counts:
+            print(f"  Scraped download counts for {len(download_counts)} digests across {page} pages")
+            found = all_digests & download_counts.keys()
+            missing = all_digests - download_counts.keys()
+            print(f"  Found counts for {len(found)}/{len(all_digests)} signed digests")
+            if missing:
+                print(f"  Missing: {[d[:12] for d in missing]}")
+
+        # Attach download counts and URLs to batch images
+        for batch in result_batches:
+            for img in batch["images"]:
+                info = download_counts.get(img["digest"], {})
+                img["downloads"] = info.get("downloads", 0)
+                img["url"] = info.get("url", "")
+
+    return {
+        "batches": result_batches,
+    }
+
 
 def generate_site(stats: ReleaseStats) -> None:
     """Generate the static site using the templates"""
@@ -516,6 +706,20 @@ async def main():
                     "open_other": 0
                 }
             }
+        }
+
+    # Fetch container image data
+    try:
+        print("Fetching container image data...")
+        container_data = await fetch_container_downloads(token)
+        stats["container_images"] = container_data
+        print(f"Successfully fetched container data: {len(container_data['batches'])} signed batches")
+    except Exception as e:
+        print(f"Warning: Failed to fetch container data: {e}")
+        import traceback
+        traceback.print_exc()
+        stats["container_images"] = {
+            "batches": [],
         }
 
     generate_site(stats)
