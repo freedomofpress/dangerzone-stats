@@ -64,8 +64,7 @@ export function ContainerChart({ stats }) {
     ));
     const barMaxWidth = 400; // pixels
 
-    // Size evolution data: per-arch series of {date, sizeMB}
-    const sizeSeries = {};  // arch -> [{date: Date, sizeMB: number}]
+    const sizeSeries = {};
     archOrder.forEach(arch => { sizeSeries[arch] = []; });
     batches.slice().sort((a, b) => a.timestamp.localeCompare(b.timestamp)).forEach(batch => {
         const date = new Date(batch.timestamp);
@@ -73,17 +72,16 @@ export function ContainerChart({ stats }) {
             const arch = img.arch || 'unknown';
             const size = img.size || 0;
             if (size > 0) {
-                sizeSeries[arch] = sizeSeries[arch] || [];
                 sizeSeries[arch].push({ date, sizeMB: size / (1024 * 1024) });
             }
         });
     });
 
     const allSizePoints = Object.values(sizeSeries).flat();
-    const hasSizeData = allSizePoints.length > 0;
+    const activeArchs = archOrder.filter(a => sizeSeries[a].length > 0);
 
     let sizeChart = null;
-    if (hasSizeData) {
+    if (allSizePoints.length > 0) {
         const width = 720;
         const height = 280;
         const padLeft = 60;
@@ -93,15 +91,14 @@ export function ContainerChart({ stats }) {
         const plotW = width - padLeft - padRight;
         const plotH = height - padTop - padBottom;
 
-        const dates = allSizePoints.map(p => p.date.getTime());
-        const minDate = Math.min(...dates);
-        const maxDate = Math.max(...dates);
+        const sortedDates = [...new Set(allSizePoints.map(p => p.date.getTime()))].sort((a, b) => a - b);
+        const minDate = sortedDates[0];
+        const maxDate = sortedDates[sortedDates.length - 1];
         const dateSpan = Math.max(1, maxDate - minDate);
 
         const sizes = allSizePoints.map(p => p.sizeMB);
         const minSize = Math.min(...sizes);
         const maxSize = Math.max(...sizes);
-        // Pad y-range a bit so points aren't on edges; use 0 floor when range is small
         const yLo = Math.max(0, Math.floor(minSize * 0.95));
         const yHi = Math.ceil(maxSize * 1.05);
         const ySpan = Math.max(1, yHi - yLo);
@@ -109,35 +106,23 @@ export function ContainerChart({ stats }) {
         const xFor = t => padLeft + ((t - minDate) / dateSpan) * plotW;
         const yFor = mb => padTop + plotH - ((mb - yLo) / ySpan) * plotH;
 
-        // Y-axis ticks (5 ticks)
-        const yTicks = [];
-        for (let i = 0; i <= 4; i++) {
-            const v = yLo + (ySpan * i) / 4;
-            yTicks.push(v);
-        }
+        const yTicks = Array.from({ length: 5 }, (_, i) => yLo + (ySpan * i) / 4);
 
-        // X-axis ticks: ~5 evenly spaced timestamps (use actual batch dates)
-        const sortedDates = Array.from(new Set(dates)).sort((a, b) => a - b);
         const xTickCount = Math.min(6, sortedDates.length);
-        const xTicks = [];
-        for (let i = 0; i < xTickCount; i++) {
-            const idx = Math.round((i * (sortedDates.length - 1)) / Math.max(1, xTickCount - 1));
-            xTicks.push(sortedDates[idx]);
-        }
+        const xTicks = Array.from({ length: xTickCount }, (_, i) =>
+            sortedDates[Math.round((i * (sortedDates.length - 1)) / Math.max(1, xTickCount - 1))]
+        );
 
-        const formatDate = (t) => {
-            const d = new Date(t);
-            return d.toLocaleDateString(undefined, { year: '2-digit', month: 'short', day: 'numeric' });
-        };
+        const formatDate = (t) =>
+            new Date(t).toLocaleDateString(undefined, { year: '2-digit', month: 'short', day: 'numeric' });
 
         sizeChart = h('div', { style: 'margin-top: 2rem;' }, [
             h('h3', null, 'Image size evolution'),
             h('p', { style: 'color: #586069; font-size: 0.9rem; margin-bottom: 0.5rem;' },
                 'Total compressed image size (config + layers) per signed batch, by architecture.'
             ),
-            // Legend (reuse arch colors)
             h('div', { style: 'display: flex; gap: 1.5rem; margin-bottom: 0.75rem;' },
-                archOrder.filter(a => (sizeSeries[a] || []).length > 0).map(arch =>
+                activeArchs.map(arch =>
                     h('div', { style: 'display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem;' }, [
                         h('span', { style: `width: 14px; height: 14px; border-radius: 3px; background: ${getArchColor(arch)};` }),
                         h('span', { style: 'font-family: monospace;' }, `linux/${arch}`),
@@ -168,8 +153,7 @@ export function ContainerChart({ stats }) {
                     'text-anchor': 'middle',
                     style: 'font-size: 11px; fill: #586069; font-family: sans-serif;'
                 }, formatDate(t))),
-                // Lines + points per arch
-                ...archOrder.filter(a => (sizeSeries[a] || []).length > 0).map(arch => {
+                ...activeArchs.map(arch => {
                     const pts = sizeSeries[arch];
                     const color = getArchColor(arch);
                     const pathD = pts.map((p, i) =>
@@ -320,7 +304,6 @@ export function ContainerChart({ stats }) {
             }),
         ]),
 
-        // Size evolution line chart (per arch)
         sizeChart,
     ]);
 }

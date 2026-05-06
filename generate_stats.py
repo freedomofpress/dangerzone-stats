@@ -566,15 +566,12 @@ async def fetch_container_downloads(token: str = None) -> Dict:
             info_by_digest = dict(zip(sorted_digests, results))
 
         result_batches = []
+        unknown_info = {"arch": "unknown", "size": 0}
         for batch in batches:
             batch_info = {
                 "timestamp": batch["timestamp"],
                 "images": [
-                    {
-                        "digest": d,
-                        "arch": info_by_digest.get(d, {}).get("arch", "unknown"),
-                        "size": info_by_digest.get(d, {}).get("size", 0),
-                    }
+                    {"digest": d, **info_by_digest.get(d, unknown_info)}
                     for d in batch["digests"]
                 ]
             }
