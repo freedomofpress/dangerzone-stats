@@ -117,24 +117,6 @@ export function ContributionChart({ stats }) {
         // Issue Tracking Charts
         contributions.burndown ? h('div', { style: 'margin-top: 3rem;' }, [
             h('h2', null, 'Issue Tracking'),
-            h('div', { class: 'summary-grid', style: 'margin-bottom: 1rem;' }, [
-                h('div', { class: 'summary-card', style: 'border-left: 4px solid #dc3545' }, [
-                    h('div', { class: 'summary-label' }, 'Open Bugs'),
-                    h('div', { class: 'summary-value' }, (contributions.burndown.current?.open_bugs || 0).toLocaleString())
-                ]),
-                h('div', { class: 'summary-card', style: 'border-left: 4px solid #ff6b6b' }, [
-                    h('div', { class: 'summary-label' }, 'Open Other Issues'),
-                    h('div', { class: 'summary-value' }, (contributions.burndown.current?.open_other || 0).toLocaleString())
-                ]),
-                h('div', { class: 'summary-card', style: 'border-left: 4px solid #28a745' }, [
-                    h('div', { class: 'summary-label' }, 'Total Open'),
-                    h('div', { class: 'summary-value' }, (contributions.burndown.current?.open || 0).toLocaleString())
-                ]),
-                h('div', { class: 'summary-card', style: 'border-left: 4px solid #6f42c1' }, [
-                    h('div', { class: 'summary-label' }, 'Closed Issues'),
-                    h('div', { class: 'summary-value' }, (contributions.burndown.current?.closed || 0).toLocaleString())
-                ])
-            ]),
 
             // Issues Over Time - Stacked Area Chart
             h('div', { style: 'margin-top: 2rem;' }, [

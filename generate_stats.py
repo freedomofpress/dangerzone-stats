@@ -522,8 +522,13 @@ async def fetch_container_downloads(token: str = None) -> Dict:
             for digest in batch["digests"]:
                 all_digests.add(digest)
 
-        async def resolve_arch(digest):
-            """Fetch manifest then config blob to determine architecture."""
+        async def resolve_image_info(digest):
+            """Fetch manifest then config blob to determine architecture and total size.
+
+            Total compressed size is computed from the manifest as the sum of the
+            config blob size plus all layer blob sizes. This corresponds to the
+            on-the-wire bytes pulled from the registry for that arch.
+            """
             try:
                 manifest_resp = await client.get(
                     f"https://ghcr.io/v2/freedomofpress/dangerzone/v1/manifests/sha256:{digest}",
@@ -537,30 +542,39 @@ async def fetch_container_downloads(token: str = None) -> Dict:
                 )
                 if manifest_resp.status_code == 200:
                     manifest = manifest_resp.json()
-                    config_digest = manifest.get("config", {}).get("digest", "")
+                    config = manifest.get("config", {})
+                    config_digest = config.get("digest", "")
+                    layers = manifest.get("layers", [])
+                    total_size = config.get("size", 0) + sum(l.get("size", 0) for l in layers)
+                    arch = "unknown"
                     if config_digest:
                         config_resp = await client.get(
                             f"https://ghcr.io/v2/freedomofpress/dangerzone/v1/blobs/{config_digest}",
                             headers={"Authorization": f"Bearer {ghcr_token}"}
                         )
                         if config_resp.status_code == 200:
-                            return config_resp.json().get("architecture", "unknown")
+                            arch = config_resp.json().get("architecture", "unknown")
+                    return {"arch": arch, "size": total_size}
             except Exception as e:
                 print(f"Warning: Could not fetch manifest for {digest[:12]}: {e}")
-            return "unknown"
+            return {"arch": "unknown", "size": 0}
 
-        arch_by_digest = {}
+        info_by_digest = {}
         if ghcr_token:
             sorted_digests = sorted(all_digests)
-            results = await asyncio.gather(*[resolve_arch(d) for d in sorted_digests])
-            arch_by_digest = dict(zip(sorted_digests, results))
+            results = await asyncio.gather(*[resolve_image_info(d) for d in sorted_digests])
+            info_by_digest = dict(zip(sorted_digests, results))
 
         result_batches = []
         for batch in batches:
             batch_info = {
                 "timestamp": batch["timestamp"],
                 "images": [
-                    {"digest": d, "arch": arch_by_digest.get(d, "unknown")}
+                    {
+                        "digest": d,
+                        "arch": info_by_digest.get(d, {}).get("arch", "unknown"),
+                        "size": info_by_digest.get(d, {}).get("size", 0),
+                    }
                     for d in batch["digests"]
                 ]
             }
