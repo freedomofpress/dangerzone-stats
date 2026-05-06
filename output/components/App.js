@@ -3,6 +3,8 @@ import { useState } from 'https://esm.sh/preact/hooks';
 import { Stats } from './Stats.js';
 import { Chart } from './Chart.js';
 import { YearlyChart } from './YearlyChart.js';
+import { ContributionChart } from './ContributionChart.js';
+import { ContainerChart } from './ContainerChart.js';
 
 export function App({ stats, generatedAt }) {
     const [activeTab, setActiveTab] = useState('charts');
@@ -22,12 +24,22 @@ export function App({ stats, generatedAt }) {
                 onClick: () => setActiveTab('yearly')
             }, 'By Year'),
             h('button', {
+                class: activeTab === 'containers' ? 'active' : '',
+                onClick: () => setActiveTab('containers')
+            }, 'Container Images'),
+            h('button', {
                 class: activeTab === 'overview' ? 'active' : '',
                 onClick: () => setActiveTab('overview')
-            }, 'Overview')
+            }, 'Overview'),
+            h('button', {
+                class: activeTab === 'contributions' ? 'active' : '',
+                onClick: () => setActiveTab('contributions')
+            }, 'Contribution Metrics')
         ]),
         activeTab === 'charts' ? h(Chart, { stats }) :
             activeTab === 'yearly' ? h(YearlyChart, { stats }) :
-                h(Stats, { stats })
+                activeTab === 'containers' ? h(ContainerChart, { stats }) :
+                    activeTab === 'contributions' ? h(ContributionChart, { stats }) :
+                        h(Stats, { stats })
     ]);
 } 
