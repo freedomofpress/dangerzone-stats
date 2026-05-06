@@ -79,13 +79,25 @@ export function YearlyChart({ stats }) {
                         h('div', { class: 'stacked-bars horizontal' },
                             platforms.map(platform => {
                                 const width = (yearStat.platforms[platform] / maxDownloads) * 400;
+
+                                // Calculate percentage for main platforms (excluding Container and Other)
+                                const mainPlatforms = ['Windows', 'Mac Intel', 'Mac Silicon'];
+                                const mainPlatformsTotal = mainPlatforms.reduce((sum, p) => sum + yearStat.platforms[p], 0);
+                                const percentage = mainPlatforms.includes(platform) && mainPlatformsTotal > 0
+                                    ? ((yearStat.platforms[platform] / mainPlatformsTotal) * 100).toFixed(1)
+                                    : null;
+
+                                const tooltipText = percentage
+                                    ? `${platform}: ${yearStat.platforms[platform].toLocaleString()} downloads (${percentage}%)`
+                                    : `${platform}: ${yearStat.platforms[platform].toLocaleString()} downloads`;
+
                                 return h('div', {
                                     class: 'bar stacked-bar horizontal',
                                     style: `
                                         width: ${width}px;
                                         background-color: ${getColorForPlatform(platform)};
                                     `,
-                                    title: `${platform}: ${yearStat.platforms[platform].toLocaleString()} downloads`
+                                    title: tooltipText
                                 });
                             })
                         ),
