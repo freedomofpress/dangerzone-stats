@@ -584,7 +584,7 @@ async def fetch_container_downloads(token: str = None) -> Dict:
         pkg_url = "https://github.com/freedomofpress/dangerzone/pkgs/container/dangerzone%2Fv1/versions"
 
         page = 1
-        max_pages = 40
+        max_pages = 150
         found_all = False
         while page <= max_pages and not found_all:
             try:
@@ -602,18 +602,19 @@ async def fetch_container_downloads(token: str = None) -> Dict:
                 # Extract version URL, digest, and download count.
                 # Real image entries have "sha256:" (colon) in the link text
                 # and no ?tag= in the href, unlike .sig/.att tag entries.
-                # The download count follows as bare text before a sr-only span.
+                # The download count follows as bare text before a sr-only span,
+                # thousands-separated with commas (e.g. "2,738") once >= 1000.
                 for m in re.finditer(
                     r'href="(/orgs/freedomofpress/packages/container/dangerzone%2Fv1/\d+)">'
                     r'sha256:([0-9a-f]{64})</a>'
                     r'.*?'
-                    r'>\s*(\d+)\s*<span[^>]*>Version downloads</span>',
+                    r'>\s*(\d{1,3}(?:,\d{3})*)\s*<span[^>]*>Version downloads</span>',
                     html,
                     re.DOTALL,
                 ):
                     url_path = m.group(1)
                     digest = m.group(2)
-                    count = int(m.group(3))
+                    count = int(m.group(3).replace(",", ""))
                     download_counts[digest] = {
                         "downloads": count,
                         "url": f"https://github.com{url_path}",
