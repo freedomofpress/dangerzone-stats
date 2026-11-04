@@ -1,5 +1,16 @@
 import { h } from 'https://esm.sh/preact';
 
+const BOT_LOGINS = new Set([
+    'dependabot[bot]', 'github-actions[bot]', 'pre-commit-ci[bot]',
+    'renovate[bot]', 'codecov[bot]',
+    'weblate-fpf', 'sdcibot', 'fpf-icinga-bot', 'fpf-k8sbot',
+    'fpfinfrabot', 'fpfpypiscanner', 'fpfsafetybot',
+]);
+
+function isBot(login) {
+    return !login || BOT_LOGINS.has(login) || login.endsWith('[bot]');
+}
+
 export function ContributionChart({ stats }) {
     if (!stats || !stats.contributions) {
         return h('div', { class: 'charts' }, 'No contribution data available');
@@ -8,7 +19,10 @@ export function ContributionChart({ stats }) {
     const contributions = stats.contributions;
     const releases = stats.releases || [];
     const totals = contributions.totals || {};
-    const timelines = contributions.contributor_timelines || {};
+    const rawTimelines = contributions.contributor_timelines || {};
+    const timelines = Object.fromEntries(
+        Object.entries(rawTimelines).filter(([login]) => !isBot(login))
+    );
     const dataByPeriod = contributions.by_month;
 
     const newContributorsData = dataByPeriod.new_contributors || {};

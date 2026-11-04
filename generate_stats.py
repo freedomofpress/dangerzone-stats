@@ -17,6 +17,26 @@ import httpx
 from typing import Dict, List, TypedDict
 from collections import defaultdict
 
+BOT_LOGINS = {
+    "dependabot[bot]",
+    "github-actions[bot]",
+    "pre-commit-ci[bot]",
+    "renovate[bot]",
+    "codecov[bot]",
+    "weblate-fpf",
+    "sdcibot",
+    "fpf-icinga-bot",
+    "fpf-k8sbot",
+    "fpfinfrabot",
+    "fpfpypiscanner",
+    "fpfsafetybot",
+}
+
+def is_bot(login: str) -> bool:
+    if not login:
+        return True
+    return login in BOT_LOGINS or login.endswith("[bot]")
+
 # FPF organization members (core members)
 CORE_MEMBERS = {
     "AAdamGlenn", "aadamglenn2", "adaFPF", "adjoro", "AishFPF", "almet", "apyrgio",
@@ -211,9 +231,10 @@ async def fetch_contributions(repo: str, token: str = None) -> Dict:
         # Sort by date to track first appearance
         contributor_activities.sort(key=lambda x: x["date"])
 
-        # Process each activity
         for activity in contributor_activities:
             login = activity["login"]
+            if is_bot(login):
+                continue
             date = activity["date"]
             month_key = date.strftime("%Y-%m")
             year_key = str(date.year)
@@ -494,15 +515,22 @@ async def fetch_container_downloads(token: str = None) -> Dict:
                         batches_map[timestamp][digest] = set()
                     batches_map[timestamp][digest].add(filename)
 
-        # Build batches with only arch-specific digests (no LATEST file)
         batches = []
         for ts in sorted(batches_map.keys()):
             arch_digests = sorted([
                 d for d, files in batches_map[ts].items()
                 if "LATEST" not in files
             ])
+            index_digests = sorted([
+                d for d, files in batches_map[ts].items()
+                if "LATEST" in files
+            ])
             if arch_digests:
-                batches.append({"timestamp": ts, "digests": arch_digests})
+                batches.append({
+                    "timestamp": ts,
+                    "digests": arch_digests,
+                    "index_digest": index_digests[0] if index_digests else None,
+                })
 
         # Step 2: Get an anonymous GHCR token (doesn't use GitHub API quota)
         ghcr_token = ""
@@ -570,84 +598,65 @@ async def fetch_container_downloads(token: str = None) -> Dict:
         for batch in batches:
             batch_info = {
                 "timestamp": batch["timestamp"],
+                "index_digest": batch.get("index_digest"),
                 "images": [
                     {"digest": d, **info_by_digest.get(d, unknown_info)}
                     for d in batch["digests"]
-                ]
+                ],
             }
             result_batches.append(batch_info)
 
-        # Step 4: Scrape download counts from the GitHub package versions web pages.
-        # The REST API does not expose download_count for container packages,
-        # so we scrape the HTML instead (no API rate limit).
-        download_counts = {}  # digest -> {"downloads": N, "url": str}
-        pkg_url = "https://github.com/freedomofpress/dangerzone/pkgs/container/dangerzone%2Fv1/versions"
-
-        page = 1
-        max_pages = 150
-        found_all = False
-        while page <= max_pages and not found_all:
-            try:
-                resp = await client.get(
-                    pkg_url,
-                    params={"page": page},
-                    headers={"Accept": "text/html"},
-                    follow_redirects=True,
-                )
-                if resp.status_code != 200:
-                    print(f"Warning: Package page returned {resp.status_code}")
-                    break
+        total_downloads = None
+        daily_downloads = {}
+        try:
+            landing_url = "https://github.com/freedomofpress/dangerzone/pkgs/container/dangerzone%2Fv1"
+            resp = await client.get(landing_url, headers={"Accept": "text/html"}, follow_redirects=True)
+            if resp.status_code == 200:
                 html = resp.text
-
-                # Extract version URL, digest, and download count.
-                # Real image entries have "sha256:" (colon) in the link text
-                # and no ?tag= in the href, unlike .sig/.att tag entries.
-                # The download count follows as bare text before a sr-only span,
-                # thousands-separated with commas (e.g. "2,738") once >= 1000.
-                for m in re.finditer(
-                    r'href="(/orgs/freedomofpress/packages/container/dangerzone%2Fv1/\d+)">'
-                    r'sha256:([0-9a-f]{64})</a>'
-                    r'.*?'
-                    r'>\s*(\d{1,3}(?:,\d{3})*)\s*<span[^>]*>Version downloads</span>',
+                total_m = re.search(
+                    r'Total\s+downloads\s*</span>\s*<h3[^>]*title="(\d+)"',
+                    html,
+                )
+                if total_m:
+                    total_downloads = int(total_m.group(1))
+                sparkline_m = re.search(
+                    r'Downloads for the last 30 days.*?</svg>',
                     html,
                     re.DOTALL,
-                ):
-                    url_path = m.group(1)
-                    digest = m.group(2)
-                    count = int(m.group(3).replace(",", ""))
-                    download_counts[digest] = {
-                        "downloads": count,
-                        "url": f"https://github.com{url_path}",
-                    }
+                )
+                if sparkline_m:
+                    for rect in re.finditer(r'<rect\b[^>]*>', sparkline_m.group(0)):
+                        count_m = re.search(r'data-merge-count="(\d+)"', rect.group(0))
+                        date_m = re.search(r'data-date="(\d{4}-\d{2}-\d{2})"', rect.group(0))
+                        if count_m and date_m:
+                            daily_downloads[date_m.group(1)] = int(count_m.group(1))
+            else:
+                print(f"Warning: Landing page returned {resp.status_code}")
+        except Exception as e:
+            print(f"Warning: Could not scrape landing page: {e}")
 
-                if all_digests.issubset(download_counts.keys()):
-                    found_all = True
+        if total_downloads is not None:
+            print(f"  Total pulls: {total_downloads:,} (30-day daily series: {len(daily_downloads)} points)")
+        else:
+            print("  Warning: could not extract total pulls from landing page")
 
-                if 'Version downloads' not in html:
-                    break
-
-                page += 1
-            except Exception as e:
-                print(f"Warning: Failed to scrape package page {page}: {e}")
-                break
-
-        if download_counts:
-            print(f"  Scraped download counts for {len(download_counts)} digests across {page} pages")
-            found = all_digests & download_counts.keys()
-            missing = all_digests - download_counts.keys()
-            print(f"  Found counts for {len(found)}/{len(all_digests)} signed digests")
-            if missing:
-                print(f"  Missing: {[d[:12] for d in missing]}")
-
-        # Attach download counts and URLs to batch images
-        for batch in result_batches:
-            for img in batch["images"]:
-                info = download_counts.get(img["digest"], {})
-                img["downloads"] = info.get("downloads", 0)
-                img["url"] = info.get("url", "")
+    history_path = Path("output/container_downloads_history.json")
+    history = {}
+    if history_path.exists():
+        try:
+            history = json.loads(history_path.read_text())
+        except Exception as e:
+            print(f"Warning: could not read {history_path}: {e}")
+    history.update(daily_downloads)
+    history = dict(sorted(history.items()))
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    history_path.write_text(json.dumps(history, indent=2) + "\n")
+    print(f"  History: {len(history)} days in {history_path}")
 
     return {
         "batches": result_batches,
+        "total_downloads": total_downloads,
+        "daily_downloads": history,
     }
 
 
