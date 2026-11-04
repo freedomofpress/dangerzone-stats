@@ -144,7 +144,7 @@ export function AssetDownloadsChart({ stats }) {
     const height = 360;
     const padLeft = 60;
     const padRight = 20;
-    const padTop = 20;
+    const padTop = 52; // room for release labels above the plot
     const padBottom = 60;
     const plotW = width - padLeft - padRight;
     const plotH = height - padTop - padBottom;
@@ -157,6 +157,22 @@ export function AssetDownloadsChart({ stats }) {
 
     const xFor = i => padLeft + i * (barWidth + barGap);
     const yFor = v => padTop + plotH - (v / yMax) * plotH;
+
+    // Horizontal position of an exact date, interpolated inside its month's bar.
+    const xForDate = (date) => {
+        const idx = (date.getUTCFullYear() - firstMonth.getUTCFullYear()) * 12
+            + (date.getUTCMonth() - firstMonth.getUTCMonth());
+        const monthStart = addMonths(firstMonth, idx);
+        const fraction = daysBetween(monthStart, date) / daysBetween(monthStart, addMonths(monthStart, 1));
+        return xFor(idx) + fraction * barWidth;
+    };
+    const RELEASE_COLOR = '#6a737d';
+    const releaseMarkers = releases.map((r, i) => ({
+        x: xForDate(r.publishedAt),
+        name: r.name,
+        date: r.publishedAt.toISOString().split('T')[0],
+        row: i % 3, // stagger labels over three rows so neighbours don't collide
+    }));
 
     const xLabels = monthData.map((d, i) => {
         if (d.month.getUTCMonth() === 0 || i === 0) {
@@ -178,7 +194,7 @@ export function AssetDownloadsChart({ stats }) {
         h('div', { style: 'margin-bottom: 1.5rem;' }, [
             h('h2', null, 'Downloads over time'),
             h('p', { style: 'color: #586069; font-size: 0.9rem; margin: 0.25rem 0 0;' },
-                '(Linux app downloads not included — distributed via APT/DNF repositories.)'
+                '(Linux app downloads not included)'
             ),
         ]),
 
@@ -207,14 +223,18 @@ export function AssetDownloadsChart({ stats }) {
             ]),
         ]),
 
-        h('div', { style: 'display: flex; gap: 1.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;' },
-            PLATFORMS.map(p =>
+        h('div', { style: 'display: flex; gap: 1.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;' }, [
+            ...PLATFORMS.map(p =>
                 h('div', { style: 'display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem;' }, [
                     h('span', { style: `width: 14px; height: 14px; border-radius: 3px; background: ${PLATFORM_COLORS[p]};` }),
                     h('span', null, p),
                 ])
-            )
-        ),
+            ),
+            h('div', { style: 'display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem;' }, [
+                h('span', { style: `width: 14px; height: 0; border-top: 2px dashed ${RELEASE_COLOR};` }),
+                h('span', null, 'Release date'),
+            ]),
+        ]),
 
         h('svg', {
             width, height,
@@ -253,6 +273,22 @@ export function AssetDownloadsChart({ stats }) {
                     ]);
                 }));
             }),
+            ...releaseMarkers.map(m => h('g', null, [
+                h('line', {
+                    x1: m.x, x2: m.x,
+                    y1: padTop - 4 - m.row * 13, y2: padTop + plotH,
+                    stroke: RELEASE_COLOR, 'stroke-width': 1,
+                    'stroke-dasharray': '3 3', opacity: 0.6,
+                }),
+                h('text', {
+                    x: m.x, y: padTop - 8 - m.row * 13,
+                    'text-anchor': 'middle',
+                    style: `font-size: 10px; fill: ${RELEASE_COLOR}; font-family: sans-serif;`,
+                }, [
+                    h('title', null, `${m.name} released on ${m.date}`),
+                    m.name,
+                ]),
+            ])),
             ...xLabels.map(l => h('text', {
                 x: l.x, y: height - padBottom + 20,
                 'text-anchor': 'middle',
