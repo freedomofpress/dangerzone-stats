@@ -17,6 +17,26 @@ import httpx
 from typing import Dict, List, TypedDict
 from collections import defaultdict
 
+BOT_LOGINS = {
+    "dependabot[bot]",
+    "github-actions[bot]",
+    "pre-commit-ci[bot]",
+    "renovate[bot]",
+    "codecov[bot]",
+    "weblate-fpf",
+    "sdcibot",
+    "fpf-icinga-bot",
+    "fpf-k8sbot",
+    "fpfinfrabot",
+    "fpfpypiscanner",
+    "fpfsafetybot",
+}
+
+def is_bot(login: str) -> bool:
+    if not login:
+        return True
+    return login in BOT_LOGINS or login.endswith("[bot]")
+
 # FPF organization members (core members)
 CORE_MEMBERS = {
     "AAdamGlenn", "aadamglenn2", "adaFPF", "adjoro", "AishFPF", "almet", "apyrgio",
@@ -211,9 +231,10 @@ async def fetch_contributions(repo: str, token: str = None) -> Dict:
         # Sort by date to track first appearance
         contributor_activities.sort(key=lambda x: x["date"])
 
-        # Process each activity
         for activity in contributor_activities:
             login = activity["login"]
+            if is_bot(login):
+                continue
             date = activity["date"]
             month_key = date.strftime("%Y-%m")
             year_key = str(date.year)
