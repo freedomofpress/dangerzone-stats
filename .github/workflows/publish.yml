@@ -31,26 +31,26 @@ jobs:
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-        
+
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@v6
 
       - name: Generate stats
         run: uv run generate_stats.py
 
-      - name: Persist container downloads history
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
-          git add output/container_downloads_history.json
-          if git diff --cached --quiet; then
-            echo "No history changes to commit"
-          else
-            git commit -m "Update container downloads history [skip ci]"
-            git -c rebase.autoStash=true pull --rebase origin main
-            git push origin HEAD:main
-          fi
+      # - name: Persist container downloads history
+      #   env:
+      #     GH_TOKEN: ${{ steps.app-token.outputs.token }}
+      #   run: |
+      #     git remote set-url origin https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+      #     git add output/container_downloads_history.json
+      #     if git diff --cached --quiet; then
+      #       echo "No history changes to commit"
+      #     else
+      #       git commit -m "Update container downloads history [skip ci]"
+      #       git -c rebase.autoStash=true pull --rebase origin main
+      #       git push origin HEAD:main
+      #     fi
 
       - name: Publish to gh-pages
         env:
