@@ -470,12 +470,77 @@ async def fetch_contributions(repo: str, token: str = None) -> Dict:
         }
     }
 
+GHCR_PACKAGE_URL = "https://github.com/freedomofpress/dangerzone/pkgs/container/dangerzone%2Fv1"
+
+
+async def fetch_ghcr_version_info(
+    client: httpx.AsyncClient, digests: set, max_pages: int = 80
+) -> Dict[str, Dict]:
+    """Map image digests to their GHCR package version id and pull count.
+
+    Scraps the Github pages…
+    """
+    wanted = set(digests)
+    found: Dict[str, Dict] = {}
+    if not wanted:
+        return found
+
+    row_re = re.compile(r'<li[^>]*class="Box-row"[^>]*>(.*?)</li>', re.DOTALL)
+    id_re = re.compile(r'/packages/container/dangerzone%2Fv1/(\d+)')
+    digest_re = re.compile(r'sha256:([0-9a-f]{64})')
+    downloads_re = re.compile(r'([\d,]+)\s*<span class="sr-only">Version downloads</span>')
+
+    async def get_page(page):
+        """Fetch one versions page, backing off when GitHub throttles us."""
+        for attempt in range(4):
+            resp = await client.get(
+                f"{GHCR_PACKAGE_URL}/versions",
+                params={"page": page},
+                headers={"Accept": "text/html"},
+            )
+            if resp.status_code not in (429, 403):
+                return resp
+            retry_after = resp.headers.get("Retry-After")
+            delay = float(retry_after) if retry_after and retry_after.isdigit() else 15 * (attempt + 1)
+            print(f"  GHCR versions page {page}: HTTP {resp.status_code}, retrying in {delay:.0f}s")
+            await asyncio.sleep(delay)
+        return resp
+
+    page = 0
+    for page in range(1, max_pages + 1):
+        try:
+            resp = await get_page(page)
+        except Exception as e:
+            print(f"  Warning: versions page {page} failed: {e}")
+            break
+        if resp.status_code != 200:
+            print(f"  Warning: versions page {page} returned {resp.status_code}")
+            break
+        rows = row_re.findall(resp.text)
+        if not rows:
+            break
+        for row in rows:
+            id_m = id_re.search(row)
+            digest_m = digest_re.search(row)
+            if not id_m or not digest_m:
+                continue
+            digest = digest_m.group(1)
+            if digest in wanted and digest not in found:
+                downloads_m = downloads_re.search(row)
+                found[digest] = {
+                    "version_id": int(id_m.group(1)),
+                    "downloads": int(downloads_m.group(1).replace(",", "")) if downloads_m else None,
+                }
+        if wanted <= set(found):
+            break
+        await asyncio.sleep(0.5)
+
+    print(f"  Resolved {len(found)}/{len(wanted)} image versions from GHCR ({page} pages)")
+    return found
+
+
 async def fetch_container_downloads(token: str = None) -> Dict:
     """Fetch container image info from ghcr-signer and GHCR.
-
-    Uses the Git Trees API (1 call) to read the full ghcr-signer directory
-    structure, then resolves architecture info via anonymous GHCR OCI
-    manifest requests (which don't count against GitHub API rate limits).
     """
     headers = {"Accept": "application/vnd.github+json"}
     if token:
@@ -593,14 +658,40 @@ async def fetch_container_downloads(token: str = None) -> Dict:
             results = await asyncio.gather(*[resolve_image_info(d) for d in sorted_digests])
             info_by_digest = dict(zip(sorted_digests, results))
 
+        # Step 4: Resolve GHCR package version ids and per-version pull counts
+        # for every signed digest (arch images and multi-arch indexes).
+        version_digests = set(all_digests)
+        for batch in batches:
+            if batch.get("index_digest"):
+                version_digests.add(batch["index_digest"])
+        try:
+            version_info = await fetch_ghcr_version_info(client, version_digests)
+        except Exception as e:
+            print(f"  Warning: could not resolve GHCR versions: {e}")
+            version_info = {}
+
+        def version_fields(digest):
+            info = version_info.get(digest)
+            if not info:
+                return {"version_id": None, "downloads": None, "url": None}
+            return {**info, "url": f"{GHCR_PACKAGE_URL}/{info['version_id']}"}
+
         result_batches = []
         unknown_info = {"arch": "unknown", "size": 0}
         for batch in batches:
+            index_digest = batch.get("index_digest")
             batch_info = {
                 "timestamp": batch["timestamp"],
-                "index_digest": batch.get("index_digest"),
+                "index_digest": index_digest,
+                "index": version_fields(index_digest) if index_digest else None,
+                "signature_url": f"https://github.com/{signer_repo}/tree/main/SIGNATURES/{batch['timestamp']}",
                 "images": [
-                    {"digest": d, **info_by_digest.get(d, unknown_info)}
+                    {
+                        "digest": d,
+                        **info_by_digest.get(d, unknown_info),
+                        **version_fields(d),
+                        "signature_url": f"https://github.com/{signer_repo}/tree/main/SIGNATURES/{batch['timestamp']}/{d}",
+                    }
                     for d in batch["digests"]
                 ],
             }
@@ -657,6 +748,8 @@ async def fetch_container_downloads(token: str = None) -> Dict:
         "batches": result_batches,
         "total_downloads": total_downloads,
         "daily_downloads": history,
+        # The sparkline's last bucket is the current (incomplete) UTC day.
+        "daily_downloads_fetched_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -675,7 +768,7 @@ def generate_site(stats: ReleaseStats) -> None:
         stats=stats,
         generated_at=datetime.now().isoformat()
     )
-    
+
     with open(output_dir / "index.html", "w") as f:
         f.write(index_content)
 
