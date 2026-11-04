@@ -247,8 +247,10 @@ export function ContainerChart({ stats }) {
                 h('div', { style: 'text-align: right;' }, 'Total'),
             ]),
 
-            // One row per batch with a stacked bar
-            ...batches.slice().reverse().map((batch, batchIdx) => {
+            // One row per batch with a stacked bar (skip batches with 0 downloads)
+            ...batches
+                .filter(batch => batch.images.reduce((sum, img) => sum + (img.downloads || 0), 0) > 0)
+                .slice().reverse().map((batch, batchIdx) => {
                 const date = batch.timestamp.split('T')[0];
                 const bgColor = batchIdx % 2 === 0 ? '#f6f8fa' : '#ffffff';
 
