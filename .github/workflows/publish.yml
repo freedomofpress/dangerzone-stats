@@ -48,7 +48,7 @@ jobs:
             echo "No history changes to commit"
           else
             git commit -m "Update container downloads history [skip ci]"
-            git pull --rebase origin main
+            git -c rebase.autoStash=true pull --rebase origin main
             git push origin HEAD:main
           fi
 
